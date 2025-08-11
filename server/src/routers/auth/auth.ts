@@ -1,10 +1,10 @@
 import express from "express";
 import "dotenv/config";
+import { generateToken } from "../../controllers/Spotify";
 
 const router = express.Router();
-const redirect_uri = "http://127.0.0.1:3000/auth/callback";
+const redirect_uri = String(process.env.REDIRECT_URL);
 const client_id = String(process.env.CLIENT_ID);
-const client_secret = String(process.env.CLIENT_SECRET);
 
 function generateRandomString(length: number) {
 	let text = "";
@@ -39,31 +39,32 @@ router.get("/callback", async (req, res) => {
 	} else {
 		try {
 			const token = await generateToken(String(code));
-			console.log(`token: ${token}`);
+			const { access_token, refresh_token } = token;
+			res.cookie("access_token", access_token, { maxAge: 3600 });
+			res.cookie("refresh_token", refresh_token);
+			res.redirect("/auth/profile");
 		} catch (error) {
 			console.log(error);
 		}
 	}
 });
-async function generateToken(code: string) {
-	const params = new URLSearchParams();
-	params.append("grant_type", "authorization_code");
-	params.append("code", String(code));
-	params.append("redirect_uri", redirect_uri);
-	const headers = {
-		"content-type": "application/x-www-form-urlencoded",
-		Authorization: `Basic ${Buffer.from(`${client_id}:${client_secret}`).toString("base64")}`,
-	};
-	try {
-		const result = await fetch("https://accounts.spotify.com/api/token", {
-			method: "POST",
-			headers: headers,
-			body: params,
-		});
-		const { access_token } = await result.json();
-		return access_token;
-	} catch (error) {
-		console.log(error);
+router.get("/profile", async (req, res) => {
+	if (!req.cookies) {
+		res.redirect("spotify");
+	} else {
+		const token = req.cookies["access_token"];
+		try {
+			const result = await fetch("https://api.spotify.com/v1/me", {
+				method: "GET",
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			const data = await result.json();
+			console.log(data);
+			res.send(data);
+		} catch (error) {
+			throw new Error(`Error: ${error}`);
+		}
 	}
-}
+});
+
 export default router;
