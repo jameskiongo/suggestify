@@ -1,6 +1,6 @@
 import express from "express";
 import "dotenv/config";
-import { generateToken } from "../../controllers/Spotify";
+import { generateAccessToken, generateToken } from "../../controllers/Spotify";
 
 const router = express.Router();
 const redirect_uri = String(process.env.REDIRECT_URL);
@@ -52,17 +52,25 @@ router.get("/profile", async (req, res) => {
 	if (!req.cookies) {
 		res.redirect("spotify");
 	} else {
-		const token = req.cookies["access_token"];
-		try {
-			const result = await fetch("https://api.spotify.com/v1/me", {
-				method: "GET",
-				headers: { Authorization: `Bearer ${token}` },
-			});
-			const data = await result.json();
-			console.log(data);
-			res.send(data);
-		} catch (error) {
-			throw new Error(`Error: ${error}`);
+		const access = req.cookies["access_token"];
+		const refresh = req.cookies["refresh_token"];
+		if (!access && !refresh) {
+			res.redirect("/auth/spotify");
+		}
+		if (refresh) {
+			const token = await generateAccessToken(refresh);
+			const { access_token } = token;
+			const refreshed = access_token;
+			try {
+				const result = await fetch("https://api.spotify.com/v1/me/playlists", {
+					method: "GET",
+					headers: { Authorization: `Bearer ${refreshed}` },
+				});
+				const data = await result.json();
+				res.send(data);
+			} catch (error) {
+				throw new Error(`Error: ${error}`);
+			}
 		}
 	}
 });
