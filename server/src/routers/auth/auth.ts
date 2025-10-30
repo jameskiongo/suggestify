@@ -2,6 +2,8 @@ import express from "express";
 import "dotenv/config";
 import { generateAccessToken, generateToken } from "../../controllers/Spotify";
 
+// Spotify API response structure - items can contain various playlist properties
+// Using unknown[] as we're just passing through the response without accessing item properties
 type SpotifyPlaylistsResponse = {
 	items: unknown[];
 	total: number;

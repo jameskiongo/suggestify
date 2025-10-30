@@ -35,7 +35,10 @@ export async function generateToken(code: string): Promise<token> {
 			body: params,
 		});
 		const data = await result.json() as SpotifyTokenResponse;
-		return { access_token: data.access_token, refresh_token: data.refresh_token ?? "" };
+		if (!data.refresh_token) {
+			throw new Error("No refresh token received from Spotify");
+		}
+		return { access_token: data.access_token, refresh_token: data.refresh_token };
 	} catch (error) {
 		throw new Error(`Error: ${error}`);
 	}
