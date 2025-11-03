@@ -2,21 +2,28 @@ import express from "express";
 import "dotenv/config";
 import { generateAccessToken, generateToken } from "../../controllers/Spotify";
 
+// Spotify API response structure - items can contain various playlist properties
+// Using unknown[] as we're just passing through the response without accessing item properties
+type SpotifyPlaylistsResponse = {
+	items: unknown[];
+	total: number;
+};
+
 const router = express.Router();
 const redirect_uri = String(process.env.REDIRECT_URL);
 const client_id = String(process.env.CLIENT_ID);
 
 function generateRandomString(length: number) {
-	let text = "";
 	const possible =
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	const chars: string[] = [];
 
 	for (let i = 0; i < length; i++) {
-		text += possible.charAt(Math.floor(Math.random() * possible.length));
+		chars.push(possible.charAt(Math.floor(Math.random() * possible.length)));
 	}
-	return text;
+	return chars.join("");
 }
-router.get("/spotify", async (_req, res) => {
+router.get("/spotify", (_req, res) => {
 	const state = generateRandomString(16);
 	const scope = "user-read-private user-read-email";
 	const params = new URLSearchParams();
@@ -32,46 +39,45 @@ router.get("/spotify", async (_req, res) => {
 });
 
 router.get("/callback", async (req, res) => {
-	const state = req.query.state || null;
-	const code = req.query.code || null;
+	const state = req.query.state as string | undefined;
+	const code = req.query.code as string | undefined;
+	
 	if (!state || !code) {
 		res.redirect("/auth/spotify");
-	} else {
-		try {
-			const token = await generateToken(String(code));
-			const { access_token, refresh_token } = token;
-			res.cookie("access_token", access_token, { maxAge: 3600 });
-			res.cookie("refresh_token", refresh_token);
-			res.redirect("/auth/profile");
-		} catch (error) {
-			console.log(error);
-		}
+		return;
+	}
+	
+	try {
+		const token = await generateToken(code);
+		res.cookie("access_token", token.access_token, { maxAge: 3600 });
+		res.cookie("refresh_token", token.refresh_token);
+		res.redirect("/auth/profile");
+	} catch (error) {
+		console.error("Error in callback:", error);
+		res.redirect("/auth/spotify");
 	}
 });
 router.get("/profile", async (req, res) => {
-	if (!req.cookies) {
-		res.redirect("spotify");
-	} else {
-		const access = req.cookies["access_token"];
-		const refresh = req.cookies["refresh_token"];
-		if (!access && !refresh) {
-			res.redirect("/auth/spotify");
-		}
-		if (refresh) {
-			const token = await generateAccessToken(refresh);
-			const { access_token } = token;
-			const refreshed = access_token;
-			try {
-				const result = await fetch("https://api.spotify.com/v1/me/playlists", {
-					method: "GET",
-					headers: { Authorization: `Bearer ${refreshed}` },
-				});
-				const data = await result.json();
-				res.send(data);
-			} catch (error) {
-				throw new Error(`Error: ${error}`);
-			}
-		}
+	// Check for refresh token in cookies
+	const cookies = req.cookies as Record<string, string> | undefined;
+	const refresh = cookies?.["refresh_token"];
+	
+	if (!refresh) {
+		res.redirect("/auth/spotify");
+		return;
+	}
+
+	try {
+		const token = await generateAccessToken(refresh);
+		const result = await fetch("https://api.spotify.com/v1/me/playlists", {
+			method: "GET",
+			headers: { Authorization: `Bearer ${token.access_token}` },
+		});
+		const data = await result.json() as SpotifyPlaylistsResponse;
+		res.send(data);
+	} catch (error) {
+		console.error("Error fetching profile:", error);
+		res.redirect("/auth/spotify");
 	}
 });
 

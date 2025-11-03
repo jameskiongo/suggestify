@@ -6,8 +6,17 @@ type access = {
 	access_token: string;
 };
 
+type SpotifyTokenResponse = {
+	access_token: string;
+	refresh_token?: string;
+	token_type: string;
+	expires_in: number;
+};
+
 const client_id = String(process.env.CLIENT_ID);
 const client_secret = String(process.env.CLIENT_SECRET);
+// Cache the base64 encoded credentials to avoid recomputing
+const authorizationHeader = `Basic ${Buffer.from(`${client_id}:${client_secret}`).toString("base64")}`;
 
 export async function generateToken(code: string): Promise<token> {
 	const redirect_uri = String(process.env.REDIRECT_URL);
@@ -17,7 +26,7 @@ export async function generateToken(code: string): Promise<token> {
 	params.append("redirect_uri", redirect_uri);
 	const headers = {
 		"content-type": "application/x-www-form-urlencoded",
-		Authorization: `Basic ${Buffer.from(`${client_id}:${client_secret}`).toString("base64")}`,
+		Authorization: authorizationHeader,
 	};
 	try {
 		const result = await fetch("https://accounts.spotify.com/api/token", {
@@ -25,8 +34,11 @@ export async function generateToken(code: string): Promise<token> {
 			headers: headers,
 			body: params,
 		});
-		const { access_token, refresh_token } = await result.json();
-		return { access_token, refresh_token };
+		const data = await result.json() as SpotifyTokenResponse;
+		if (!data.refresh_token) {
+			throw new Error("No refresh token received from Spotify");
+		}
+		return { access_token: data.access_token, refresh_token: data.refresh_token };
 	} catch (error) {
 		throw new Error(`Error: ${error}`);
 	}
@@ -37,7 +49,7 @@ export async function generateAccessToken(code: string): Promise<access> {
 	params.append("refresh_token", String(code));
 	const headers = {
 		"content-type": "application/x-www-form-urlencoded",
-		Authorization: `Basic ${Buffer.from(`${client_id}:${client_secret}`).toString("base64")}`,
+		Authorization: authorizationHeader,
 	};
 	try {
 		const result = await fetch("https://accounts.spotify.com/api/token", {
@@ -45,8 +57,8 @@ export async function generateAccessToken(code: string): Promise<access> {
 			headers: headers,
 			body: params,
 		});
-		const { access_token } = await result.json();
-		return { access_token };
+		const data = await result.json() as SpotifyTokenResponse;
+		return { access_token: data.access_token };
 	} catch (error) {
 		throw new Error(`Error: ${error}`);
 	}
